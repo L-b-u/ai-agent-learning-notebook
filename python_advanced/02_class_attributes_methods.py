@@ -1,5 +1,4 @@
-# 02_class_attributes_methods.py — 类属性、实例属性、方法体系（进阶版）
-
+# 02_class_attributes_methods.py — 类属性、实例属性、方法体系
 # 1. 三种属性类型全面对比
 
 class DemoClass:

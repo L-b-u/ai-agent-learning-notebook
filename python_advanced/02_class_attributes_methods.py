@@ -106,4 +106,3 @@ s1 = Singleton(1)
 s2 = Singleton(2)
 print(f"  s1 和 s2 是同一对象？{s1 is s2}")
 print(f"  s1.value={s1.value}, s2.value={s2.value}")
-

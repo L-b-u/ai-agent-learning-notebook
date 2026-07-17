@@ -14,6 +14,8 @@
 5. [datetime 进阶实战](#5-datetime-进阶实战)
 6. [多线程进阶](#6-多线程进阶)
 7. [Git 基础](#7-git-基础)
+8. [类装饰器](#8-类装饰器)
+9. [异步编程](#9-异步编程)
 - [速查总表](#速查总表)
 - [Agent 开发场景映射](#agent-开发场景映射-进阶)
 
@@ -257,6 +259,109 @@ hotfix/*  → 紧急修复
 
 ---
 
+## 8. 类装饰器
+
+**对应文件**：`08_class_decorator.py`、`09_cache.py`、`10_func_num.py`、`11_limit_number.py`
+
+### 核心要点
+- 类装饰器 = `__init__` 接收被装饰函数 + `__call__` 让实例可调用
+- 与函数装饰器本质区别：靠 `self.xxx` 实例属性持久保存状态
+- 带参数类装饰器：`__init__` 收配置，`__call__` 收函数并返回 wrapper
+- 四大应用场景：日志、缓存、调用计数、接口限流
+
+### 深度解读
+
+**类装饰器 vs 函数装饰器**：
+
+| 维度 | 函数装饰器 | 类装饰器 |
+|------|----------|----------|
+| 状态存储 | 需闭包 `nonlocal` 或 global | `self.xxx` 自然持久 |
+| 外部交互 | 难暴露方法 | `self.get_cache()` 等随意扩展 |
+| 传参 | 三层嵌套闭包 | `__init__` 收配置，`__call__` 收函数 |
+| 适用 | 简单无状态 | 带状态、需外部操控 |
+
+**带参数类装饰器的执行流程**：
+```python
+@Logger("DEBUG")
+def login(name): ...
+
+# 等价于:
+# login = Logger("DEBUG").__call__(login)
+# Logger("DEBUG") → __init__ 存储 self.level="DEBUG"
+# .__call__(login) → 返回 wrapper
+# login 实际指向 wrapper
+```
+
+**场景 1：缓存管理（09_cache.py）**
+
+用 `self._cache` 字典存储每个被装饰函数独立缓存，提供 `clear()` 和 `get_cache()` 供外部调用，避免了函数装饰器全局缓存互相污染的缺陷。
+
+**场景 2：调用计数（10_func_num.py）**
+
+`self.count` 在多次调用中持久累加，`get_count()` 随时查询。函数装饰器要实现同样效果需要用 `nonlocal` 或全局变量。
+
+**场景 3：接口限流（11_limit_number.py）**
+
+`self.record` 保存调用时间戳列表，每次调用清理超时记录，超限抛异常。类装饰器的 `self` 天然适合维护时间窗口状态。
+
+### 常见坑
+- `__call__` 的 `return` 不能忘，否则被装饰函数返回 `None`
+- 带参数时 `__call__(self, func)` 必须返回 `wrapper`，不是直接调用 `func`
+
+### Agent 开发场景
+- 工具调用限流：`@RateLimit(max_times=100, window=60)` 防止 API 过载
+- 函数调用计数：统计每个 Tool 被调次数，用于用量分析
+- 缓存装饰器：缓存 LLM 相同 prompt 的结果，减少重复调用
+
+---
+
+## 9. 异步编程
+
+**对应文件**：`12_sync_async.py`、`13_order_async.py`、`14_async_work.py`、`15_async_hello.py`、`16_async_reasoning.py`、`17_async_request.py`
+
+### 核心要点
+- 异步 = 一个线程里的协程调度，等待时不阻塞，切换去干别的
+- 关键三件套：`async def` 定义协程、`await` 等待、`asyncio.run()` 启动
+- `asyncio.gather()`：并发执行多个协程，等全部完成
+- `asyncio.sleep()` vs `time.sleep()`：前者不阻塞线程
+
+### 深度解读
+
+**多线程 vs 异步**：
+
+| 维度 | 多线程 | 异步 |
+|------|--------|------|
+| 谁来干活 | 多个线程 | 一个线程多个协程 |
+| 切换成本 | 高（操作系统调度） | 低（自己切换） |
+| 内存占用 | 每个线程 ~MB | 每个协程 ~KB |
+| 共享数据 | 需要 Lock | 单线程按顺序，天然安全 |
+| 适合 | 等待型 + 少量计算 | 大量等待（网络、IO） |
+
+**同步版 vs 异步版对比（12_sync_async.py）**：
+- 同步：3 个各 2s → 串行总计 6s
+- 异步：`await asyncio.gather(task("A"), task("B"), task("C"))` → 约 2s
+
+**三种方式横向对比（16_async_reasoning.py）**：
+5 个 1 秒任务 → 串行 ~5s / 多线程 ~1s / 异步 ~1s
+
+**异步版 AI 模型请求（17_async_request.py）**：
+- 基类 `AIModel` → `async def predict` 抛 `NotImplementedError`
+- 子类 `TextModel`（sleep 1s）和 `ImageModel`（sleep 2s）
+- `gather` 并发 4 个用户请求 → 总耗时取决于最长任务（约 2s）
+
+### 常见坑
+- 普通函数里不能直接 `await`，必须放在 `async def` 里
+- 事件循环已运行时不能用 `asyncio.run()` 嵌套
+- `await` 后面必须是 awaitable 对象（协程 / Future / Task）
+- 忘记 `await` 协程不会执行，只是创建了一个任务单
+
+### Agent 开发场景
+- 并发调用多个 LLM API：`gather` 同时请求 GPT/Claude/Gemini
+- 异步 RAG 检索：同时查文档库、知识图谱、网络搜索
+- Agent 多工具并行：`gather` 同时调计算器、天气 API、翻译接口
+
+---
+
 ## 速查总表
 
 | 知识点 | 文件 | 关键 API | 常见坑 |
@@ -268,6 +373,8 @@ hotfix/*  → 紧急修复
 | datetime | 05 | `timedelta/perf_counter` | 时区/缺少月年运算 |
 | 多线程 | 06 | `Thread/Lock` | GIL 限制 CPU 并行 |
 | Git | 07 | `add/commit/push` | 忘记 `.gitignore` |
+| 类装饰器 | 08-11 | `__init__/__call__` | 带参时 `__call__` 须返回 wrapper |
+| 异步编程 | 12-17 | `async/await/gather` | 忘记 `await` 协程不会执行 |
 
 ---
 
@@ -283,4 +390,9 @@ hotfix/*  → 紧急修复
 | 多线程 + Lock | 并发 API 调用 + 安全日志 |
 | Git | 项目版本管理、CI/CD 流水线 |
 | 时序编排 | 定时任务、缓存过期、限速窗口 |
+| 类装饰器（缓存） | LLM 相同 prompt 结果缓存，减少重复调用开销 |
+| 类装饰器（限流） | 工具调用频率控制，防止 API 过载 |
+| 类装饰器（计数） | 统计各 Tool 调用次数，用于用量分析与成本核算 |
+| 异步 `gather` | 并发调用多 LLM / 多工具 / 多数据源，显著降低响应延迟 |
+| 异步 AIModel | Agent 推理管道异步化，I/O 密集场景从串行变并行 |
 

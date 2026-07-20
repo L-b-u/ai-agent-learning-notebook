@@ -1,107 +1,101 @@
-# 01_oop_basics.py — 类与对象基础（进阶版）
+# 01_oop_basics.py — 类与对象基础
 
-# 1. 类与对象核心：self 的真相
+# 1. 类的定义、self 原理、类属性 vs 实例属性
 
 class Car:
-    wheels = 4    # 类属性
+    wheels = 4                               # 类属性
 
     def __init__(self, brand, color):
-        self.brand = brand
+        self.brand = brand                   # 实例属性
         self.color = color
         self.speed = 0
 
-    def run(self):
-        self.speed = 60
-        print(f"  {self.brand}({self.color}) 正在行驶，速度 {self.speed}km/h")
+    def accelerate(self, delta):
+        self.speed += delta
 
     def stop(self):
         self.speed = 0
-        print(f"  {self.brand} 已停车")
 
-car = Car("丰田", "白色")
-# car.run() 本质上等价于 Car.run(car)
-car.run()
-Car.run(car)     # 等价写法，揭示 self 就是实例本身
+    def __str__(self):
+        return f"Car({self.brand}, {self.color}, speed={self.speed})"
 
-# 2. 实例属性 vs 类属性（深入对比）
-print("\n--- 2. 属性体系对比 ---")
+car1 = Car("BMW", "黑色")
+car2 = Car("Tesla", "白色")
 
-print(f"  类属性 wheels：{Car.wheels}")
-print(f"  实例读取 wheels：{car.wheels}")
+# self 的本质: car1.accelerate(50) 等价于 Car.accelerate(car1, 50)
+Car.accelerate(car1, 50)
+print(f"  car1: {car1}")
+print(f"  car2: {car2}")
+print(f"  类属性 wheels: {Car.wheels}, 实例读取: {car1.wheels}")
 
-# 修改类属性
+# 修改类属性影响所有实例
 Car.wheels = 6
-print(f"  修改类属性后：car.wheels={car.wheels}，Car.wheels={Car.wheels}")
+print(f"  改类属性后: car1.wheels={car1.wheels}, car2.wheels={car2.wheels}")
 
-# 实例赋值"同名属性"会创建实例属性（隐藏类属性）
-car.wheels = 8
-print(f"  car.wheels=8（实例属性）后：car.wheels={car.wheels}，Car.wheels={Car.wheels}")
+# 实例赋值同名属性会创建实例属性, 遮蔽类属性
+car1.wheels = 8
+print(f"  car1.wheels=8 后: car1.wheels={car1.wheels}, Car.wheels={Car.wheels}")
 
-# 3. @classmethod / @staticmethod / 实例方法 对比
-print("\n--- 3. 三种方法类型对比 ---")
+# 2. 三种方法类型: 实例方法 / @classmethod / @staticmethod
 
-class Demo:
-    class_attr = "类属性值"
+class MethodDemo:
+    class_var = "类变量值"
 
     def instance_method(self):
-        """实例方法：接收 self，可访问实例和类"""
-        return f"实例方法：self={self}, class_attr={self.class_attr}"
+        return f"实例方法: self={self}, class_var={self.class_var}"
 
     @classmethod
     def class_method(cls):
-        """类方法：接收 cls，只能访问类级别"""
-        return f"类方法：cls={cls.__name__}, class_attr={cls.class_attr}"
+        return f"类方法: cls={cls.__name__}, class_var={cls.class_var}"
 
     @staticmethod
-    def static_method():
-        """静态方法：不接收 self/cls，就是普通函数"""
-        return "静态方法：无需实例即可调用"
+    def static_method(x):
+        return f"静态方法: 无需 self/cls, x={x}"
 
-d = Demo()
-print(f"  {d.instance_method()}")
-print(f"  {Demo.class_method()}")
-print(f"  {Demo.static_method()}")
+obj = MethodDemo()
+print(f"\n  {obj.instance_method()}")
+print(f"  {MethodDemo.class_method()}")
+print(f"  {MethodDemo.static_method(42)}")
 
-# 4. Student 练习（完整 OOP 建模）
-print("\n--- 4. Student 综合练习 ---")
+# 3. @property: 属性访问控制（带校验）
 
-class Student:
-    school = "AI 学院"
-    student_count = 0
-
-    def __init__(self, name, age, score):
-        self.name = name
-        self.age = age
-        self.score = score
-        self._id = None
-        Student.student_count += 1
+class Temperature:
+    def __init__(self, celsius=0):
+        self._celsius = celsius
 
     @property
-    def grade(self):
-        """等级属性（只读计算属性）"""
-        if self.score >= 90:
-            return "A"
-        elif self.score >= 80:
-            return "B"
-        elif self.score >= 60:
-            return "C"
-        else:
-            return "D"
+    def celsius(self):
+        return self._celsius
 
-    @classmethod
-    def get_count(cls):
-        return f"当前学生总数：{cls.student_count}"
+    @celsius.setter
+    def celsius(self, value):
+        if value < -273.15:
+            raise ValueError("温度不能低于绝对零度 -273.15°C")
+        self._celsius = value
 
-    def __str__(self):
-        return f"Student({self.name}, {self.age}岁, {self.score}分, 等级{self.grade})"
+    @property
+    def fahrenheit(self):
+        return self._celsius * 9 / 5 + 32
 
-students = [
-    Student("张三", 20, 95),
-    Student("李四", 22, 82),
-    Student("王五", 21, 58),
-]
+t = Temperature(25)
+print(f"\n  摄氏度: {t.celsius}°C, 华氏度: {t.fahrenheit}°F")
+t.celsius = 100
+print(f"  更新后: {t.celsius}°C = {t.fahrenheit}°F")
 
-for s in students:
-    print(f"  {s}")
-print(f"  {Student.get_count()}")
+# 4. __new__ vs __init__（单例模式）
 
+class Singleton:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self, value):
+        self.value = value
+
+s1 = Singleton(1)
+s2 = Singleton(2)
+print(f"\n  单例: s1 is s2 = {s1 is s2}")
+print(f"  s1.value={s1.value}, s2.value={s2.value}  (第二次 __init__ 覆盖了 value)")

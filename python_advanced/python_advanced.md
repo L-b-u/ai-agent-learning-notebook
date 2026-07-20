@@ -1,364 +1,517 @@
-# Python 进阶学习文档（python_advanced）
+# Python 进阶复习文档
 
-> 本模块整合自 `day02_继承重写多线程_git.ipynb`，覆盖 OOP 深度、多线程、datetime、Git 等进阶知识点。
-> 每个知识点对应一个独立可运行的 `.py` 文件（07_git 除外，为命令参考），本文档提供原理剖析与 Agent 开发场景关联。
+> 覆盖 python_advanced 目录下的 9 个代码文件，按顺序逐一讲解核心概念、关键 API、典型示例和常见坑。
+> 纯 Python 进阶复习，适合已有基础后深入。
 
 ---
 
 ## 目录
 
-1. [OOP 基础（进阶版）](#1-oop-基础进阶版)
-2. [属性与方法体系](#2-属性与方法体系)
-3. [继承、重写与 super()](#3-继承重写与-super)
-4. [抽象接口与 NotImplementedError](#4-抽象接口与-notimplementederror)
-5. [datetime 进阶实战](#5-datetime-进阶实战)
-6. [多线程进阶](#6-多线程进阶)
-7. [Git 基础](#7-git-基础)
-8. [类装饰器](#8-类装饰器)
-9. [异步编程](#9-异步编程)
+1. [OOP 基础](#1-oop-基础)
+2. [继承与多态](#2-继承与多态)
+3. [抽象接口](#3-抽象接口)
+4. [时间日期处理](#4-时间日期处理)
+5. [多线程](#5-多线程)
+6. [装饰器](#6-装饰器)
+7. [类装饰器](#7-类装饰器)
+8. [异步编程](#8-异步编程)
+9. [Git 基础](#9-git-基础)
 - [速查总表](#速查总表)
-- [Agent 开发场景映射](#agent-开发场景映射-进阶)
 
 ---
 
-## 1. OOP 基础（进阶版）
+## 1. OOP 基础
 
 **对应文件**：`01_oop_basics.py`
 
-### 核心要点
-- `self` 的本质：`car.run()` 等价于 `Car.run(car)`
-- 类属性 vs 实例属性：修改类属性的三种影响路径
-- 三种方法：实例方法（95%场景）、类方法、静态方法
-- `@property`：计算属性（如 `grade`）
-- `@classmethod`：工厂方法、统计计数
+**概念**：面向对象编程将数据和操作封装为类。Python 中一切皆对象，类本身也是对象。理解 self、类属性与实例属性、三种方法类型和属性访问控制是 OOP 基础。
 
-### 深度解读
+**核心 API**：
 
-**`self` 原理**：
+| 特性 | 语法 | 说明 |
+|------|------|------|
+| 构造方法 | `__init__(self)` | 初始化实例属性 |
+| 类属性 | 定义在类体内、方法外 | 所有实例共享 |
+| 实例属性 | `self.xxx` | 每个实例独立 |
+| 实例方法 | `def method(self)` | 默认方法类型，占 95% |
+| 类方法 | `@classmethod` | 第一个参数是 `cls` |
+| 静态方法 | `@staticmethod` | 无 self/cls，普通函数 |
+| 属性访问 | `@property` | getter 方法像属性一样调用 |
+| 对象创建 | `__new__` | 在 `__init__` 之前，控制实例创建 |
+
+**关键示例**：
+
 ```python
-car = Car("Tesla")
-car.run()       # 等价于 Car.run(car)
-```
-Python 在调用实例方法时自动将实例作为第一个参数传入。
+# self 本质: car.accelerate(50) 等价于 Car.accelerate(car, 50)
+class Car:
+    wheels = 4                           # 类属性, 所有实例共享
 
-**实例属性遮蔽**：
-```python
-Car.wheels = 4      # 类属性
-car.wheels = 6      # 创建实例属性，遮蔽类属性
-```
-优先级：实例属性 > 类属性。修改类属性需要通过 `ClassName.attr`。
+    def __init__(self, brand, color):
+        self.brand = brand               # 实例属性, 每个实例独立
 
-### Agent 开发场景
-- Agent 类：`class MyAgent` 用 `self.history` 存储对话历史
-- `@classmethod` 实现工厂方法：`Agent.from_config(config_dict)`
-- `@property` 暴露只读状态：`agent.is_busy`
+# 类属性 vs 实例属性
+car = Car("Tesla", "白")
+car.wheels = 8      # 创建实例属性遮蔽类属性, Car.wheels 仍为 4
+
+# @property 带校验
+class Temperature:
+    @property
+    def celsius(self):
+        return self._celsius
+
+    @celsius.setter
+    def celsius(self, value):
+        if value < -273.15:
+            raise ValueError("低于绝对零度")
+        self._celsius = value
+
+# __new__ 单例模式
+class Singleton:
+    _instance = None
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+```
+
+**常见坑**：
+- 实例属性遮蔽类属性：`obj.attr = val` 创建实例属性，不修改类属性
+- `__new__` 不自动调 `__init__`：返回的实例若非本类实例（如返回已有对象），`__init__` 不会被调
+- `@staticmethod` 中访问类属性需用 `ClassName.attr`，不能用 `cls`
 
 ---
 
-## 2. 属性与方法体系
+## 2. 继承与多态
 
-**对应文件**：`02_class_attributes_methods.py`
+**对应文件**：`02_inheritance.py`
 
-### 核心要点
-- 三种属性：类属性（共享）、实例属性（独立）、私有属性（`__name` 名称改编）
-- `@property` 全套（getter/setter/deleter）
-- `__new__` vs `__init__`（对象创建 vs 初始化）
-- 单例模式实现
+**概念**：继承让子类复用父类的属性和方法，`super()` 按 MRO（方法解析顺序）查找父类实现。多态让不同子类以相同接口表现不同行为。
 
-### 深度解读
+**核心 API**：
 
-**名称改编（Name Mangling）**：
-`self.__private` → `_ClassName__private`。目的是避免子类无意覆盖，而非安全手段。
+| 特性 | 语法 | 说明 |
+|------|------|------|
+| 基本继承 | `class Child(Parent)` | 子类继承父类 |
+| 方法重写 | 子类中定义同名方法 | 覆盖父类实现 |
+| 调用父类 | `super().method()` | 按 MRO 查找下一个实现 |
+| 类型检查 | `isinstance(obj, Cls)` | 是否该类或其子类实例 |
+| 子类判断 | `issubclass(Sub, Parent)` | 是否继承关系 |
+| 方法解析顺序 | `Cls.__mro__` | 查看继承链 |
 
-**`__new__` vs `__init__`**：
-- `__new__`：创建对象（返回实例），在 `__init__` 之前
-- `__init__`：初始化对象（不返回）
-- 单例模式在 `__new__` 中控制
+**关键示例**：
 
-**三种方法选择指南**：
-
-| 方法类型 | 第一个参数 | 何时使用 |
-|---------|-----------|----------|
-| 实例方法 | `self` | 需要访问/修改实例数据（95%） |
-| 类方法 | `cls` | 工厂方法、修改类状态 |
-| 静态方法 | 无 | 工具函数、无需访问实例/类 |
-
-### Agent 开发场景
-- 单例：全局 ToolManager 用 `__new__` 保证唯一
-- `@staticmethod`：参数校验工具函数
-
----
-
-## 3. 继承、重写与 super()
-
-**对应文件**：`03_inheritance_override.py`
-
-### 核心要点
-- 基本继承：`class ElectricCar(Car)`
-- 方法重写：子类同名方法覆盖父类
-- `super()`：调用父类方法（非简单"父类"，按 MRO）
-- 多层继承链
-- `super()` 三种调用方式
-
-### 深度解读
-
-**MRO（Method Resolution Order）**：
 ```python
-WorkingDog.__mro__  # WorkingDog -> Dog -> Pet -> Animal -> object
-```
-C3 线性化算法保证一致性。`super()` 按 MRO 查找下一个实现。
+# 基本继承与重写
+class Animal:
+    def speak(self):
+        return "发出声音"
 
-**`super()` 三种写法**：
-```python
-super().method()           # Python 3 推荐
-super(CurrentClass, self)  # Python 2 兼容
+class Dog(Animal):
+    def speak(self):           # 重写
+        return "汪汪!"
+
+# super() 扩展父类行为
+class ElectricCar(Car):
+    def __init__(self, brand, color, battery):
+        super().__init__(brand, color)
+        self.battery = battery
+
+# 多态
+class PaymentMethod:
+    def pay(self, amount):
+        raise NotImplementedError
+
+class CreditCard(PaymentMethod):
+    def pay(self, amount):
+        return f"信用卡支付 {amount}"
+
+# 统一接口
+def checkout(method, amount):
+    return method.pay(amount)  # 不关心具体类型
+
+# MRO
+print(Dog.__mro__)  # Dog -> Animal -> object
 ```
 
-**坑点**：`super()` 调的不是直接的父类，而是 MRO 中的下一级。多重继承时要特别注意 MRO 顺序。
-
-### Agent 开发场景
-- `BaseLLM` → `OpenAILLM` / `ClaudeLLM` / `LocalLLM` 统一接口
-- 工具继承：`BaseTool` 定义 `execute()`，子工具实现具体逻辑
+**常见坑**：
+- `super()` 不是简单调用直接父类，而是按 MRO 链查找下一个实现
+- 多重继承时 MRO 顺序敏感，C3 线性化算法保证一致性
+- `isinstance(obj, Parent)` 对子类实例也返回 True
 
 ---
 
-## 4. 抽象接口与 NotImplementedError
+## 3. 抽象接口
 
-**对应文件**：`04_abstract_interface.py`
+**对应文件**：`03_abstract.py`
 
-### 核心要点
-- `NotImplementedError`：轻量级接口约定
-- `ABC` + `@abstractmethod`：编译时强制约束
-- 多态：同一接口处理不同类型对象
+**概念**：抽象接口定义子类必须实现的方法约定。Python 有两种方式：轻量的 `NotImplementedError`（运行时检查）和 `ABC + @abstractmethod`（实例化时强制检查）。
 
-### 深度解读
+**核心 API**：
 
-**两种抽象方案对比**：
+| 方式 | 语法 | 检查时机 | 特点 |
+|------|------|----------|------|
+| NotImplementedError | `raise NotImplementedError` | 调用时 | 轻量灵活，不调用不报错 |
+| ABC + @abstractmethod | `class Cls(ABC)` + `@abstractmethod` | 实例化时 | 强制约束，有继承开销 |
 
-| 方案 | 约束时机 | 优点 | 缺点 |
-|------|---------|------|------|
-| `NotImplementedError` | 运行时 | 轻量、灵活 | 不调用不报错 |
-| `ABC + @abstractmethod` | 实例化时 | 强制检查 | 稍重、有继承开销 |
+**关键示例**：
 
-**`@abstractmethod`**：抽象方法在子类必须实现。缺少任何抽象方法就 `TypeError`。
-
-**多态精髓**：
 ```python
-def pipeline(models, inputs):
-    for m, i in zip(models, inputs):
-        m.predict(i)  # 无需知道具体模型类型
+# NotImplementedError 模式
+class BaseModel:
+    def predict(self, input_data):
+        raise NotImplementedError(f"{type(self).__name__} 必须实现 predict")
+
+# ABC 模式
+from abc import ABC, abstractmethod
+
+class AIModel(ABC):
+    @abstractmethod
+    def predict(self, input_data):
+        ...
+
+    def version(self):         # 非抽象方法可有默认实现
+        return "v1.0"
+
+class TextModel(AIModel):
+    def predict(self, input_data):
+        return f"生成: {input_data}"
+
+# 缺少抽象方法 -> TypeError (实例化时即报错)
 ```
 
-### Agent 开发场景
-- `BaseTool` 用 `@abstractmethod` 强制子类实现 `execute()`
-- `NotImplementedError` 用于工具链中需手动注册的插件接口
+**常见坑**：
+- `NotImplementedError` 不调用就不会报错，适合插件式接口
+- `ABC` 的 `@abstractmethod` 可与非抽象方法混用，子类可继承默认实现
+- 抽象类不能直接实例化
 
 ---
 
-## 5. datetime 进阶实战
+## 4. 时间日期处理
 
-**对应文件**：`05_datetime.py`
+**对应文件**：`04_datetime.py`
 
-### 核心要点
-- 时间戳与 datetime 互转
-- `timedelta` 精细运算（天/周/小时/分钟/秒）
-- 日期比较
-- 性能计时（`perf_counter` vs `datetime.now()`）
-- 串行 vs 并行时间统计
+**概念**：`datetime` 模块提供日期时间的创建、格式化、解析和运算。`time` 模块提供底层时间戳和高精度计时。
 
-### 深度解读
+**核心 API**：
 
-**`perf_counter` vs `datetime.now()`**：
-- `time.perf_counter()`：单调递增的高精度时钟，适合性能测试
-- `datetime.now()`：可读性强，适合日志记录
+| 操作 | API | 说明 |
+|------|-----|------|
+| 当前时间 | `datetime.now()` | 本地时间 |
+| 创建日期 | `datetime(2026, 7, 16)` | 指定年月日 |
+| 格式化 | `strftime("%Y-%m-%d")` | datetime -> 字符串 |
+| 解析 | `strptime(s, fmt)` | 字符串 -> datetime |
+| 时间差 | `timedelta(days=1)` | 天/周/小时/分钟/秒 |
+| 时间戳 | `time.time()` | Unix 秒数 |
+| 高精度计时 | `time.perf_counter()` | 单调递增，适合性能测试 |
+| 日期比较 | `d1 < d2` | 直接比较运算符 |
 
-**`timedelta` 局限性**：不支持月/年（天数不固定），需 `dateutil.relativedelta`。
+**常见格式码**：
 
-### Agent 开发场景
-- 工具调用耗时统计：`perf_counter` 精准
-- API 限速窗口计算：`timedelta(hours=1)`
-- 缓存过期判断：`now > cache_time + timedelta(minutes=5)`
+| 码 | 含义 | 示例 |
+|----|------|------|
+| `%Y` | 四位年 | 2026 |
+| `%m` | 两位月 | 07 |
+| `%d` | 两位日 | 16 |
+| `%H` | 24小时制 | 14 |
+| `%M` | 分钟 | 30 |
+| `%S` | 秒 | 00 |
+| `%A` | 英文星期 | Monday |
 
----
+**关键示例**：
 
-## 6. 多线程进阶
-
-**对应文件**：`06_threading.py`
-
-### 核心要点
-- Thread 创建、启动、join
-- 竞态条件：多线程共享可变数据不加锁的后果
-- `Lock`：`with lock:` 模式
-- 串行 vs 并行性能量化对比
-- GIL 真相与适用场景
-
-### 深度解读
-
-**竞态条件实验**：
 ```python
-# 不加锁：期望 200000，实际可能 150000（丢失约 25%）
-# 加锁：期望 200000，实际 200000（准确无误）
+from datetime import datetime, timedelta
+
+# 字符串解析
+d = datetime.strptime("2026-07-16 15:00", "%Y-%m-%d %H:%M")
+
+# 时间运算
+yesterday = datetime.now() - timedelta(days=1)
+next_week = datetime.now() + timedelta(weeks=1)
+
+# 计算时间差
+delta = task_end - task_start
+print(delta.total_seconds())  # 总秒数
+
+# 性能计时推荐用 perf_counter
+import time
+start = time.perf_counter()
+heavy_work()
+print(f"耗时: {time.perf_counter() - start:.4f}s")
 ```
 
-**GIL 适用场景判断**：
-- I/O 密集型：多线程有效（等待 I/O 时释放 GIL）
-- CPU 密集型：多线程无效，甚至更慢（线程切换开销），应用 `multiprocessing`
-
-**Lock 最佳实践**：
-1. 用 `with lock:` 自动释放
-2. 锁粒度尽量小（锁内只保护必要代码）
-3. 多锁时获取顺序保持一致，防止死锁
-
-### Agent 开发场景
-- 并发调用多个 LLM API（I/O 密集，显著加速）
-- 共享日志列表：`with self.lock: self.logs.append(entry)`
-- 不适合场景：并发训练模型（CPU 密集，用多进程）
+**常见坑**：
+- `datetime.now()` 无时区信息，跨时区应用 `datetime.now(timezone.utc)`
+- `timedelta` 不支持月/年运算（天数不固定），需第三方库 `dateutil`
+- `perf_counter()` 适合性能测试，`datetime.now()` 适合日志记录，勿混用
 
 ---
 
-## 7. Git 基础
+## 5. 多线程
 
-**对应文件**：`07_git_basics.py`
+**对应文件**：`05_threading.py`
 
-### 核心要点
+**概念**：多线程让程序同时执行多个任务。Python 的 GIL（全局解释器锁）限制同一时刻只有一个线程执行字节码，因此多线程适合 I/O 密集型任务，不适合 CPU 密集型。
+
+**核心 API**：
+
+| 操作 | API | 说明 |
+|------|-----|------|
+| 创建线程 | `Thread(target=func, args=(...))` | 返回线程对象 |
+| 启动 | `thread.start()` | 开始执行 |
+| 等待完成 | `thread.join()` | 阻塞直到线程结束 |
+| 锁 | `lock = Lock()` | 创建锁 |
+| 上下文加锁 | `with lock:` | 自动 acquire/release |
+
+**关键示例**：
+
+```python
+import threading
+
+# 创建并启动线程
+threads = [threading.Thread(target=download, args=(f,)) for f in files]
+for t in threads: t.start()
+for t in threads: t.join()   # 等待全部完成
+
+# Lock 防止竞态条件
+lock = threading.Lock()
+counter = 0
+
+def increment(n):
+    global counter
+    for _ in range(n):
+        with lock:            # 自动 acquire + release
+            counter += 1
+
+# 串行 vs 并行
+# I/O 密集型: 并行显著加速（等待 I/O 时释放 GIL）
+# CPU 密集型: 多线程无效甚至更慢，用 multiprocessing
+```
+
+**常见坑**：
+- `counter += 1` 不是原子操作：读 -> 加 -> 写，多线程并发会丢失数据
+- 锁的粒度尽量小，减少阻塞时间
+- 多锁时获取顺序保持一致，防止死锁
+- GIL 限制 CPU 并行：计算密集任务改用 `multiprocessing`
+
+---
+
+## 6. 装饰器
+
+**对应文件**：`06_decorators.py`
+
+**概念**：装饰器本质是 `func = decorator(func)`，利用闭包在函数执行前后注入逻辑。`@wraps(func)` 保留原函数的元信息。
+
+**核心 API**：
+
+| 场景 | 实现 | 关键点 |
+|------|------|--------|
+| 日志 | 在 wrapper 中打印参数和返回值 | 调试追踪 |
+| 计时 | `perf_counter()` 包裹调用 | 性能监控 |
+| 缓存 | 字典存储 `args -> result` | 避免重复计算 |
+| 带参数 | 三层嵌套（参数层/装饰器层/包装层） | 灵活配置 |
+
+**关键示例**：
+
+```python
+from functools import wraps
+import time
+
+# 计时装饰器
+def timer(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        print(f"{func.__name__} 耗时 {time.perf_counter() - start:.4f}s")
+        return result
+    return wrapper
+
+# 缓存装饰器
+def memoize(func):
+    cache = {}
+    @wraps(func)
+    def wrapper(*args):
+        if args not in cache:
+            cache[args] = func(*args)
+        return cache[args]
+    return wrapper
+
+@memoize
+def fib(n):
+    if n <= 1: return n
+    return fib(n-1) + fib(n-2)
+```
+
+**常见坑**：
+- 忘记 `@wraps(func)` 会导致原函数 `__name__`、`__doc__` 丢失
+- 装饰器在模块加载时执行一次（定义时），不是在每次调用时
+- 带参数装饰器需要三层嵌套：外收参数，中收函数，内是 wrapper
+
+---
+
+## 7. 类装饰器
+
+**对应文件**：`07_class_decorator.py`
+
+**概念**：类装饰器用 `__init__` 接收被装饰函数，用 `__call__` 让实例可调用。相比函数装饰器，类装饰器的 `self.xxx` 天然持久化状态，且可暴露额外方法（如 `clear()`、`get_count()`）。
+
+**核心 API**：
+
+| 场景 | 类装饰器优势 |
+|------|-------------|
+| 日志 | `__init__` 收配置，`__call__` 包裹执行 |
+| 缓存 | `self._cache` 持久化，暴露 `clear()`/`get_cache()` |
+| 计数 | `self.count` 累加，暴露 `get_count()` |
+| 限流 | `self.record` 存储时间戳，窗口过期自动清理 |
+
+**关键示例**：
+
+```python
+# 带参数类装饰器
+class Logger:
+    def __init__(self, level="INFO"):  # 收配置
+        self.level = level
+
+    def __call__(self, func):           # 收函数, 返回 wrapper
+        def wrapper(*args, **kwargs):
+            print(f"[{self.level}] {func.__name__}")
+            return func(*args, **kwargs)
+        return wrapper
+
+@Logger(level="DEBUG")
+def login(name):
+    return f"{name} 登录成功"
+
+# 等价于: login = Logger("DEBUG").__call__(login)
+
+# 限流装饰器
+class RateLimit:
+    def __init__(self, max_times=3, window=10):
+        self.max_times = max_times
+        self.window = window
+        self.record = []
+
+    def __call__(self, func):
+        def wrapper(*args, **kwargs):
+            now = time.time()
+            self.record = [t for t in self.record if now - t < self.window]
+            if len(self.record) >= self.max_times:
+                raise Exception("请求过于频繁")
+            self.record.append(now)
+            return func(*args, **kwargs)
+        return wrapper
+```
+
+**常见坑**：
+- 带参数时 `__call__` 必须返回 `wrapper`，不能直接返回 `func(*args)`
+- 每个被装饰函数对应一个类实例，不同函数的缓存/计数彼此独立
+- `__call__` 中的 `return` 不能忘，否则被装饰函数返回 `None`
+
+---
+
+## 8. 异步编程
+
+**对应文件**：`08_async.py`
+
+**概念**：异步编程用协程在单线程内实现并发。`await` 点让出控制权给事件循环切换执行其他协程，等待不阻塞。适合大量 I/O 等待场景，协程切换成本远低于线程切换。
+
+**核心 API**：
+
+| 操作 | API | 说明 |
+|------|-----|------|
+| 定义协程 | `async def` | 异步函数 |
+| 等待 | `await` | 暂停直到 awaitable 完成 |
+| 并发执行 | `asyncio.gather(...)` | 等全部完成返回列表 |
+| 异步睡眠 | `await asyncio.sleep(n)` | 不阻塞线程 |
+| 启动入口 | `asyncio.run(coro)` | 创建事件循环并运行 |
+
+**三种方式对比**：
+
+| 维度 | 串行 | 多线程 | 异步 |
+|------|------|--------|------|
+| 切换成本 | 无 | 高（OS 调度） | 低（协程自切换） |
+| 内存占用 | 小 | 每线程 ~MB | 每协程 ~KB |
+| 数据安全 | 安全 | 需 Lock | 天然安全（单线程） |
+| 适用场景 | 简单任务 | I/O 密集 | 大量 I/O 等待 |
+
+**关键示例**：
+
+```python
+import asyncio
+
+# 同步: 3 个 2s 任务 -> 6s
+# 异步 gather: -> 约 2s
+async def task(name):
+    await asyncio.sleep(2)
+    return f"{name} 完成"
+
+results = await asyncio.gather(task("A"), task("B"), task("C"))
+
+# 异步版并发请求
+async def user_request(user, model, input_data):
+    result = await model.predict(input_data)
+    return {"user": user, "result": result}
+
+results = await asyncio.gather(
+    user_request("u1", text_model, "讲笑话"),
+    user_request("u2", image_model, "cat.jpg"),
+)
+# 总耗时取决于最长的任务
+```
+
+**常见坑**：
+- 普通函数里不能直接 `await`，必须放在 `async def` 里
+- 事件循环已运行时不能用 `asyncio.run()` 嵌套
+- 忘记 `await` 协程不会执行，只是创建了一个协程对象
+- `await` 后面必须是 awaitable 对象（协程/Future/Task）
+
+---
+
+## 9. Git 基础
+
+**对应文件**：`09_git_basics.py`
+
+**概念**：Git 是分布式版本控制系统。核心工作流：工作区 -> `git add` -> 暂存区 -> `git commit` -> 本地仓库 -> `git push` -> 远程仓库。
+
+**核心命令**：
 
 | 阶段 | 命令 | 说明 |
 |------|------|------|
-| 配置 | `git config` | 设置用户名/邮箱 |
-| 初始化 | `git init / clone` | 创建/克隆仓库 |
-| 工作区→暂存区 | `git add .` | 暂存修改 |
-| 暂存区→仓库 | `git commit -m "..."` | 提交到本地仓库 |
-| 分支 | `git branch / checkout` | 创建/切换分支 |
-| 合并 | `git merge` | 合并分支 |
-| 远程 | `git push / pull` | 推送到远程/拉取 |
-| 撤销 | `git reset / revert` | 回退修改 |
+| 配置 | `git config --global user.name/email` | 首次使用配置身份 |
+| 初始化 | `git init` / `git clone <url>` | 创建/克隆仓库 |
+| 暂存 | `git add <file>` / `git add .` | 加入暂存区 |
+| 提交 | `git commit -m "message"` | 提交到本地仓库 |
+| 状态 | `git status` / `git log --oneline` | 查看状态/历史 |
+| 分支 | `git branch` / `git checkout -b <name>` | 创建/切换分支 |
+| 合并 | `git merge <branch>` | 合并到当前分支 |
+| 远程 | `git push` / `git pull` / `git fetch` | 推送/拉取/获取 |
+| 撤销 | `git reset` / `git revert` | 回退修改 |
 
-### 深度解读
+**关键示例**：
 
-**提交信息规范**（Conventional Commits）：
-```
-feat: 新功能
-fix: 修复 bug
-docs: 文档更新
-refactor: 重构
-chore: 构建/工具
-```
+```bash
+# GitHub Quick Start
+git init
+git add .
+git commit -m "first commit"
+git branch -M main
+git remote add origin https://github.com/user/repo.git
+git push -u origin main
 
-**Git Flow 分支策略**：
-```
-main    → 生产环境
-develop → 开发主线
-feature/* → 功能分支
-hotfix/*  → 紧急修复
-```
-
-### Agent 开发场景
-- 项目版本管理（Python 项目必须用 Git）
-- `.gitignore`：`__pycache__/` `.env` `*.pyc` 必须加入
-- CI/CD：Git 触发自动测试部署
-
----
-
-## 8. 类装饰器
-
-**对应文件**：`08_class_decorator.py`、`09_cache.py`、`10_func_num.py`、`11_limit_number.py`
-
-### 核心要点
-- 类装饰器 = `__init__` 接收被装饰函数 + `__call__` 让实例可调用
-- 与函数装饰器本质区别：靠 `self.xxx` 实例属性持久保存状态
-- 带参数类装饰器：`__init__` 收配置，`__call__` 收函数并返回 wrapper
-- 四大应用场景：日志、缓存、调用计数、接口限流
-
-### 深度解读
-
-**类装饰器 vs 函数装饰器**：
-
-| 维度 | 函数装饰器 | 类装饰器 |
-|------|----------|----------|
-| 状态存储 | 需闭包 `nonlocal` 或 global | `self.xxx` 自然持久 |
-| 外部交互 | 难暴露方法 | `self.get_cache()` 等随意扩展 |
-| 传参 | 三层嵌套闭包 | `__init__` 收配置，`__call__` 收函数 |
-| 适用 | 简单无状态 | 带状态、需外部操控 |
-
-**带参数类装饰器的执行流程**：
-```python
-@Logger("DEBUG")
-def login(name): ...
-
-# 等价于:
-# login = Logger("DEBUG").__call__(login)
-# Logger("DEBUG") → __init__ 存储 self.level="DEBUG"
-# .__call__(login) → 返回 wrapper
-# login 实际指向 wrapper
+# 分支工作流
+git checkout -b feature/login    # 创建功能分支
+git add . && git commit -m "feat: add login"
+git checkout main
+git merge feature/login          # 合并回主分支
 ```
 
-**场景 1：缓存管理（09_cache.py）**
+**提交信息规范**（Conventional Commits）：`feat:` 新功能、`fix:` 修复、`docs:` 文档、`refactor:` 重构、`chore:` 构建/工具。
 
-用 `self._cache` 字典存储每个被装饰函数独立缓存，提供 `clear()` 和 `get_cache()` 供外部调用，避免了函数装饰器全局缓存互相污染的缺陷。
-
-**场景 2：调用计数（10_func_num.py）**
-
-`self.count` 在多次调用中持久累加，`get_count()` 随时查询。函数装饰器要实现同样效果需要用 `nonlocal` 或全局变量。
-
-**场景 3：接口限流（11_limit_number.py）**
-
-`self.record` 保存调用时间戳列表，每次调用清理超时记录，超限抛异常。类装饰器的 `self` 天然适合维护时间窗口状态。
-
-### 常见坑
-- `__call__` 的 `return` 不能忘，否则被装饰函数返回 `None`
-- 带参数时 `__call__(self, func)` 必须返回 `wrapper`，不是直接调用 `func`
-
-### Agent 开发场景
-- 工具调用限流：`@RateLimit(max_times=100, window=60)` 防止 API 过载
-- 函数调用计数：统计每个 Tool 被调次数，用于用量分析
-- 缓存装饰器：缓存 LLM 相同 prompt 的结果，减少重复调用
-
----
-
-## 9. 异步编程
-
-**对应文件**：`12_sync_async.py`、`13_order_async.py`、`14_async_work.py`、`15_async_hello.py`、`16_async_reasoning.py`、`17_async_request.py`
-
-### 核心要点
-- 异步 = 一个线程里的协程调度，等待时不阻塞，切换去干别的
-- 关键三件套：`async def` 定义协程、`await` 等待、`asyncio.run()` 启动
-- `asyncio.gather()`：并发执行多个协程，等全部完成
-- `asyncio.sleep()` vs `time.sleep()`：前者不阻塞线程
-
-### 深度解读
-
-**多线程 vs 异步**：
-
-| 维度 | 多线程 | 异步 |
-|------|--------|------|
-| 谁来干活 | 多个线程 | 一个线程多个协程 |
-| 切换成本 | 高（操作系统调度） | 低（自己切换） |
-| 内存占用 | 每个线程 ~MB | 每个协程 ~KB |
-| 共享数据 | 需要 Lock | 单线程按顺序，天然安全 |
-| 适合 | 等待型 + 少量计算 | 大量等待（网络、IO） |
-
-**同步版 vs 异步版对比（12_sync_async.py）**：
-- 同步：3 个各 2s → 串行总计 6s
-- 异步：`await asyncio.gather(task("A"), task("B"), task("C"))` → 约 2s
-
-**三种方式横向对比（16_async_reasoning.py）**：
-5 个 1 秒任务 → 串行 ~5s / 多线程 ~1s / 异步 ~1s
-
-**异步版 AI 模型请求（17_async_request.py）**：
-- 基类 `AIModel` → `async def predict` 抛 `NotImplementedError`
-- 子类 `TextModel`（sleep 1s）和 `ImageModel`（sleep 2s）
-- `gather` 并发 4 个用户请求 → 总耗时取决于最长任务（约 2s）
-
-### 常见坑
-- 普通函数里不能直接 `await`，必须放在 `async def` 里
-- 事件循环已运行时不能用 `asyncio.run()` 嵌套
-- `await` 后面必须是 awaitable 对象（协程 / Future / Task）
-- 忘记 `await` 协程不会执行，只是创建了一个任务单
-
-### Agent 开发场景
-- 并发调用多个 LLM API：`gather` 同时请求 GPT/Claude/Gemini
-- 异步 RAG 检索：同时查文档库、知识图谱、网络搜索
-- Agent 多工具并行：`gather` 同时调计算器、天气 API、翻译接口
+**常见坑**：
+- 忘记 `.gitignore`：至少包含 `__pycache__/`、`.env`、`*.pyc`
+- `git push` 前忘 `git pull`：推送被拒，先拉取合并再推送
+- `git reset --hard` 不可逆，丢失工作区修改
 
 ---
 
@@ -366,33 +519,12 @@ def login(name): ...
 
 | 知识点 | 文件 | 关键 API | 常见坑 |
 |--------|------|----------|--------|
-| OOP 基础 | 01 | `self/@property` | 实例属性遮蔽类属性 |
-| 方法体系 | 02 | `__new__/@staticmethod` | `__new__` 不调 `__init__` |
-| 继承 | 03 | `super()/MRO` | super 非直接父类 |
-| 抽象接口 | 04 | `ABC/@abstractmethod` | 忘记实现接口 |
-| datetime | 05 | `timedelta/perf_counter` | 时区/缺少月年运算 |
-| 多线程 | 06 | `Thread/Lock` | GIL 限制 CPU 并行 |
-| Git | 07 | `add/commit/push` | 忘记 `.gitignore` |
-| 类装饰器 | 08-11 | `__init__/__call__` | 带参时 `__call__` 须返回 wrapper |
-| 异步编程 | 12-17 | `async/await/gather` | 忘记 `await` 协程不会执行 |
-
----
-
-## Agent 开发场景映射（进阶）
-
-| 进阶知识点 | Agent 应用 |
-|-----------|-----------|
-| `@abstractmethod` | `BaseTool.execute()` 强制子类实现 |
-| `super() + MRO` | 工具链继承：日志/校验装饰器叠加 |
-| 单例 (`__new__`) | 全局 ToolManager / ConfigManager |
-| `NotImplementedError` | 插件接口约定 |
-| `perf_counter` | 工具调用耗时监控与 Alert |
-| 多线程 + Lock | 并发 API 调用 + 安全日志 |
-| Git | 项目版本管理、CI/CD 流水线 |
-| 时序编排 | 定时任务、缓存过期、限速窗口 |
-| 类装饰器（缓存） | LLM 相同 prompt 结果缓存，减少重复调用开销 |
-| 类装饰器（限流） | 工具调用频率控制，防止 API 过载 |
-| 类装饰器（计数） | 统计各 Tool 调用次数，用于用量分析与成本核算 |
-| 异步 `gather` | 并发调用多 LLM / 多工具 / 多数据源，显著降低响应延迟 |
-| 异步 AIModel | Agent 推理管道异步化，I/O 密集场景从串行变并行 |
-
+| OOP 基础 | 01 | `self/@property/__new__` | 实例属性遮蔽类属性 |
+| 继承多态 | 02 | `super()/isinstance/MRO` | super 非直接父类 |
+| 抽象接口 | 03 | `ABC/@abstractmethod` | NotImplementedError 不调用不报错 |
+| datetime | 04 | `strftime/strptime/timedelta` | 时区缺失/timedelta 不含月年 |
+| 多线程 | 05 | `Thread/Lock/join` | GIL 限制 CPU 并行 |
+| 装饰器 | 06 | `@wraps` | 忘记 @wraps 丢元信息 |
+| 类装饰器 | 07 | `__init__/__call__` | 带参时 __call__ 须返回 wrapper |
+| 异步 | 08 | `async/await/gather` | 忘记 await 协程不执行 |
+| Git | 09 | `add/commit/push/merge` | 忘记 .gitignore |

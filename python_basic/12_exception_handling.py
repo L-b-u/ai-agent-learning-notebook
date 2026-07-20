@@ -1,4 +1,4 @@
-# 13_exception_handling.py — 异常处理 try / except / finally / raise
+# 12_exception_handling.py — 异常处理 try / except / finally / raise
 
 # 1. 基本 try / except
 
